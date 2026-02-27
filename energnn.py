@@ -33,54 +33,90 @@ config = {
 
 # region: Toolbelt
 # These functions are very useful.
-class Box:
-    pass
-
-toolbelt = Box()
-
-def setto(obj:object, attr:str):
-    def decorator(func):
-        setattr(obj, attr, func)
-        return func
-    return decorator
-
-@setto(toolbelt, "read_json")
-def read_json(path:str) -> dict:
-    with open(path, "r") as f:
-        ans = json.load(f)
-    return ans
-
-@setto(toolbelt, "cleanup")
-def cleanup():
-    "This function will clean up all temp file in project"
-    # TODO
-    return
-
-@setto(toolbelt, "ase_atoms_to_graph")
-def ase_atoms_to_graph(atoms:ase.atoms.Atoms, cutoff:float=30.0) -> tuple[tc.Tensor, tc.Tensor, tc.Tensor]:
-    'This function will turn the ase Atoms into Data'
-    # return Data(node_feature=..., edge_index=..., edge_weight=...) # this is the input of model.
-    atomic_numbers = tc.tensor(atoms.get_atomic_numbers(), dtype=tc.float)
-    atom_position = tc.tensor(atoms.get_positions(), dtype=tc.float)
-    node_features = tc.cat([
-        atomic_numbers.reshape(-1, 1),
-        atom_position],
-        dim=1)
-    # i is the index of central atom, and j is the index of nearby atoms, d is the distance between each other.
-    i, j, d = neighbor_list('ijd', atoms, cutoff, self_interaction=True)
-    edge_index = tc.tensor([i, j], dtype=tc.long)
-    edge_weight = tc.tensor(d, dtype=tc.float)
-    #print(f"node_features shape:{node_features.shape}, {type(node_features)}")
-    #print(f"edge_index shape:{edge_index.shape}, {edge_index}")
-    #print(f"edge_weight shape:{edge_weight.shape}, {edge_weight}")
-    return (
-        node_features,
-        edge_index,
-        edge_weight
-    )
-@setto(toolbelt, "get_root_path")
-def get_root_path()->str:
-    return os.path.dirname(os.path.abspath(__file__))
+class Toolbelt:
+    @staticmethod
+    def read_json(path:str) -> dict:
+        with open(path, "r") as f:
+            ans = json.load(f)
+        return ans
+    @staticmethod
+    def cleanup():
+        "This function will clean up all temp file in project"
+        os.system(f"rm -r {Toolbelt.get_root_path()}/tmp")
+        return
+    @staticmethod
+    def ase_atoms_to_graph(atoms:ase.atoms.Atoms, cutoff:float=30.0) -> tuple[tc.Tensor, tc.Tensor, tc.Tensor]:
+        'This function will turn the ase Atoms into Data'
+        # return Data(node_feature=..., edge_index=..., edge_weight=...) # this is the input of model.
+        atomic_numbers = tc.tensor(atoms.get_atomic_numbers(), dtype=tc.float)
+        atom_position = tc.tensor(atoms.get_positions(), dtype=tc.float)
+        node_features = tc.cat([
+            atomic_numbers.reshape(-1, 1),
+            atom_position],
+            dim=1)
+        # i is the index of central atom, and j is the index of nearby atoms, d is the distance between each other.
+        i, j, d = neighbor_list('ijd', atoms, cutoff, self_interaction=True)
+        edge_index = tc.tensor([i, j], dtype=tc.long)
+        edge_weight = tc.tensor(d, dtype=tc.float)
+        #print(f"node_features shape:{node_features.shape}, {type(node_features)}")
+        #print(f"edge_index shape:{edge_index.shape}, {edge_index}")
+        #print(f"edge_weight shape:{edge_weight.shape}, {edge_weight}")
+        return (
+            node_features,
+            edge_index,
+            edge_weight
+        )
+    @staticmethod
+    def get_root_path()->str:
+        """Return something like '/usr/aylwin/matbench' """
+        return os.path.dirname(os.path.abspath(__file__))
+    @staticmethod
+    def download_environment_files():
+        """
+        This will download all files that needed. All files will be installed in project_root/tmp
+        > This function only need to be excuted at first time.
+        """
+        # Download alexandria 
+        # Make sure target directory exist.
+        for file_num in ['000', '001', '002', '003', '004', '005', '006', '007', '008', '009',
+                         '010', '011', '012', '013', '014', '015', '016', '017', '018', '019',
+                         '020', '021', '022', '023', '024', '025', '026', '027', '028', '029',
+                         '030', '031', '032', '033', '034', '035', '036', '037', '038', '039',
+                         '040', '041', '042', '043', '044', '045', '046', '047', '048', '049']:
+            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/Alexandria/ https://alexandria.icams.rub.de/data/pbe/2024.12.15/alexandria_{file_num}.json.bz2")
+        # unzip the .bz2 files
+        print("Extract Alexandria dataset...")
+        os.system(f"bzip2 -d {Toolbelt.get_root_path()}/Alexandria/*.bz2")
+    @staticmethod
+    def pk_dump(obj, path:str, absolute:bool=False):
+        """
+        Dumplicate python object to path by using pickle.dump.
+        - obj: The python object wants to dump.
+        - path: file name you want to save.
+        - absolute: if true, path should be a absolute path.
+        ```
+        # These two lines are the same.
+        Toolbelt.pk_dump(obj, "/aaa.dump")
+        Toolbelt.pk_dump(obj, f"{Toolbelt.get_root_path()}/aaa.dump", absolute=True)
+        ```
+        """
+        abs_path = path if absolute else f"{Toolbelt.get_root_path()}/tmp{path}"
+        with open(abs_path, "wb") as f:
+            pickle.dump(obj, f)
+    @staticmethod
+    def pk_load(path:str, absolute:bool=False):
+        """
+        Load the python object that was dumped.
+        - path: file name you want to save.
+        - absolute: if true, path should be a absolute path.
+        ```
+        Toolbelt.pk_load("/aaa.dump")
+        Toolbelt.pk_load(f"{Toolbelt.get_root_path()}/aaa.dump", absolute=True)
+        ```
+        """
+        abs_path = path if absolute else f"{Toolbelt.get_root_path()}/tmp{path}"
+        with open(abs_path, "rb") as f:
+            return pickle.load(f)
 # endregion
 
 # region: Datasets.
@@ -93,7 +129,7 @@ class DatasetAlexandria(Dataset):
         self.matrix = []
         print("Loading Alexandria dataset...")
         for i in load_files:
-            jdict = read_json(f"{os.path.dirname(__file__)}/tmp/Alexandria/alexandria_{i}.json")
+            jdict = Toolbelt.read_json(f"{os.path.dirname(__file__)}/tmp/Alexandria/alexandria_{i}.json")
             for each_structure in tqdm.tqdm(jdict['entries'][:]):  # HERE: you can set to read the part of the data
                 energy = each_structure['energy']
                 e_above_hull = each_structure['data']['e_above_hull']
@@ -187,7 +223,7 @@ class DatasetWBM(Dataset):
         return self.wbm_relax_dataset_list.__len__()
     def __getitem__(self, index:int) -> Data: # Not support Slice currently.
         if type(index)==slice: raise Exception("Not support slice currently")
-        node_features, edge_index, edge_weight = toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
+        node_features, edge_index, edge_weight = Toolbelt.toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
         material_id:str = self.wbm_relax_dataset_list[index][1]
         #df_wbm_summary_indexed = self.df_wbm_summary.set_index('material_id')
         #e_above_hull_wbm = self.df_wbm_summary_indexed.loc[material_id]['e_above_hull_wbm']
@@ -203,7 +239,10 @@ class DatasetWBM(Dataset):
         )
 
 def datasetAlexandriaNeo(load_files:list[int]=["000"], cutoff=6.0)->list[Data]:
-    """This function will return a iterator as dataset"""
+    """
+    This function will return a list as dataset.
+    - return: list[Data(x, edge_index, edge_attr, matrix, abc, y)]
+    """
     print("Loading Alexandria dataset ==== ")
     def structure_to_graph_data(structure, cutoff=5.0):
         # 1. Get all neighbors, (PBC considered).
@@ -231,12 +270,12 @@ def datasetAlexandriaNeo(load_files:list[int]=["000"], cutoff=6.0)->list[Data]:
     from monty.serialization import loadfn
     ans = []
     for i in load_files:
-        file_path = f"{toolbelt.get_root_path()}/tmp/Alexandria/alexandria_{i}.json"
+        file_path = f"{Toolbelt.get_root_path()}/tmp/Alexandria/alexandria_{i}.json"
         data_dict = loadfn(file_path)
         for entry in tqdm.tqdm(data_dict['entries']): # in each entry
             node_features, edge_index, edge_weight, matrix, abc = structure_to_graph_data(entry.structure, cutoff=cutoff)
             ans.append(Data(
-                x = node_features,
+                x = node_features, # [<atomic_number>, <x>, <y>, <z>]
                 edge_index = edge_index,
                 edge_attr = edge_weight,
                 matrix = matrix,
@@ -371,10 +410,7 @@ class EnerG(nn.Module):
         self.leaky = nn.LeakyReLU(0.1)
     def node_features_to_edge_weight(self, node_features, edge_index):
         ans = tc.zeros(edge_index.shape[1], 3).to(node_features.device)
-        #for i in range(edge_index.shape[1]): #TODO: algorithm optimize needed
-        #    ans[i] = (node_features[edge_index[1][i]] - node_features[edge_index[0][i]])[1:]
         ans = (node_features[edge_index[1, :]] - node_features[edge_index[0, :]])[:, 1:]
-        #print(">>>>", t.shape, ans.shape)
         return ans
     def forward(self, data:Data):
         # we don't using edge_weight here, we calculate edge_weight from node_features.
@@ -382,8 +418,7 @@ class EnerG(nn.Module):
         edge_weight_cal = self.node_features_to_edge_weight(data.x, data.edge_index).to(model_device)
         node_features = data.x.to(model_device)
         edge_index = data.edge_index.to(model_device)
-        batch_index = data.batch_index.to(model_device)
-        #print(">>>", node_features.shape, edge_index.shape, edge_weight_cal.shape)
+        batch_index = data.batch.to(model_device)
         node_features = self.conv1(node_features, edge_index, edge_weight_cal)
         node_features = self.leaky(node_features)
         node_features = self.conv2(node_features, edge_index, edge_weight_cal)
@@ -400,20 +435,19 @@ class EnerG(nn.Module):
         x = self.leaky(x)
         x = self.fc3(x)
         return x
-    def force(self, node_features:tc.Tensor, edge_index:tc.Tensor, edge_weight:tc.Tensor, batch_index:tc.Tensor):
-        # TODO: just input Data.
+    def force(self, input_data:Data):
         """This function will evaluate the force of struct"""
         model_device = next(self.parameters()).device
-        #node_features = tc.tensor(node_features, requires_grad=True).to(model_device)
-        #edge_index = edge_index.to(model_device)
-        #edge_weight = tc.tensor(edge_weight, requires_grad=True).to(model_device)
-        #batch_index = batch_index.to(model_device)
+        node_features = input_data.x
+        edge_index = input_data.edge_index
+        edge_weight = input_data.edge_attr
+        batch_index = input_data.batch
         node_features = node_features.detach().clone().to(model_device).requires_grad_(True)
         edge_index = edge_index.to(model_device)
         edge_weight = edge_weight.detach().clone().to(model_device).requires_grad_(True)
         batch_index = batch_index.to(model_device)
         node_features.grad.zero_() if node_features.grad!=None else "Do nothing"# clean the grad
-        energy = self.forward(node_features, edge_index, edge_weight, batch_index)
+        energy = self.forward(Data(x=node_features, edge_index=edge_index, edge_attr=edge_weight, batch_index=batch_index))
         energy.sum().backward() # backward.
         force_ans = node_features.grad[:, 1:]
         return force_ans
@@ -460,6 +494,7 @@ def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here shoul
                batch_size=64,
                num_workers=1):
     """This tester apply the tcg_loader.dataloader to dataset"""
+    # TODO: model forward should be a Data type.
     loss_fn = loss_fn()
     with tc.no_grad(): # Test don't need the grad
         model = model.to(device)

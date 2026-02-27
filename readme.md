@@ -17,10 +17,17 @@ We recommend using Pixi/Conda (see `EnerGNN/pixi.toml`):
 
 ```sh
 # from the project root
-pixi init       # creates an environment from [pixi.toml](http://_vscodecontentref_/1)
+pixi init       # creates an environment from [pixi.toml]
 pixi install
+pixi shell      # To enter the python envitonment, run this.
+# Then we need to install matbench-discovery manually.
+git clone https://github.com/janosh/matbench-discovery --depth 1
+pip install -e ./matbench-discovery
 ```
 > `matbench_discovery` is also needed but should be installed manually. [https://github.com/janosh/matbench-discovery](https://github.com/janosh/matbench-discovery)
+> 
+> 
+
 
 ## Quick start
 Prepare data:
