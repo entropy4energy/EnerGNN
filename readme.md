@@ -3,11 +3,11 @@ A graph‑neural‑network based model for crystal‑structure energy/force/stre
 prediction, built on [PyTorch](https://pytorch.org)/[PyG](https://pytorch-geometric.readthedocs.io/)
 and the `matbench-discovery` datasets. The repository contains:
 
-* `energnn.py`: model, dataset loaders and simple train/test helpers;
-* `main.ipynb`: interactive notebook demonstrating data loading, training,
+- `energnn.py`: model, dataset loaders and simple train/test helpers;
+- `main.ipynb`: interactive notebook demonstrating data loading, training,
   evaluation, force calculation, etc.;
-* `pixi.toml`: dependency list for creating a conda environment;
-* helper functions for converting WBM/Alexandria JSON into PyG `Data`.
+- `pixi.toml`: dependency list for creating a conda environment;
+- helper functions for converting WBM/Alexandria JSON into PyG `Data`.
 
 ---
 
@@ -25,8 +25,6 @@ git clone https://github.com/janosh/matbench-discovery --depth 1
 pip install -e ./matbench-discovery
 ```
 > `matbench_discovery` is also needed but should be installed manually. [https://github.com/janosh/matbench-discovery](https://github.com/janosh/matbench-discovery)
-> 
-> 
 
 
 ## Quick start
