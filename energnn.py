@@ -52,7 +52,7 @@ class Toolbelt:
         atom_position = tc.tensor(atoms.get_positions(), dtype=tc.float)
         node_features = tc.cat([
             atomic_numbers.reshape(-1, 1),
-            atom_position],
+            atom_position], # TODO: atom_position should be fractional coordinates or cartesian coordinates? I think fractional coordinates is better, but I need to test it.
             dim=1)
         # i is the index of central atom, and j is the index of nearby atoms, d is the distance between each other.
         i, j, d = neighbor_list('ijd', atoms, cutoff, self_interaction=True)
@@ -223,7 +223,7 @@ class DatasetWBM(Dataset):
         return self.wbm_relax_dataset_list.__len__()
     def __getitem__(self, index:int) -> Data: # Not support Slice currently.
         if type(index)==slice: raise Exception("Not support slice currently")
-        node_features, edge_index, edge_weight = Toolbelt.toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
+        node_features, edge_index, edge_weight = Toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
         material_id:str = self.wbm_relax_dataset_list[index][1]
         #df_wbm_summary_indexed = self.df_wbm_summary.set_index('material_id')
         #e_above_hull_wbm = self.df_wbm_summary_indexed.loc[material_id]['e_above_hull_wbm']
@@ -275,7 +275,7 @@ def datasetAlexandriaNeo(load_files:list[int]=["000"], cutoff=6.0)->list[Data]:
         for entry in tqdm.tqdm(data_dict['entries']): # in each entry
             node_features, edge_index, edge_weight, matrix, abc = structure_to_graph_data(entry.structure, cutoff=cutoff)
             ans.append(Data(
-                x = node_features, # [<atomic_number>, <x>, <y>, <z>]
+                x = node_features, # [<atomic_number>, <x>, <y>, <z>] # TODO: the position should be fractional coordinates or cartesian coordinates? I think fractional coordinates is better, but I need to test it.
                 edge_index = edge_index,
                 edge_attr = edge_weight,
                 matrix = matrix,
@@ -488,7 +488,7 @@ def tcg_trainer(model:tc.nn.Module, dataset:Dataset, optimizer,
             n+=1
             bar.set_postfix_str(f"avr_loss:{sum_loss/n}")
         log['avr_loss'] += [sum_loss/n]
-    return (model, log)
+    return model, log
 def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here should be a closure (return the real loss_fn).
                device='cpu', 
                batch_size=64,
@@ -513,49 +513,6 @@ def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here shoul
 
 
 # region: playground
-def load_train_test(device='cuda'):
-    'This function is a most basic attempt.'
-    # define the test function
-    def test():
-        # TODO: add test logic
-        return
-    wandb.init(project="matbench")
-    loading_from_pickle =  True
-    if loading_from_pickle:
-        with open("/home/aylwin/Projects/matbench/tmp/alexset.dump", "rb") as f:
-            dataset = pickle.load(f)
-    else:
-        dataset = DatasetAlexandria()
-    dataset.dump("/home/aylwin/Projects/matbench/tmp/alexset.dump")
-    model = ModelBasicGNN().to(device)
-    # train_loop
-    loss_fn = nn.L1Loss()
-    optimizer = tc.optim.SGD(model.parameters(), lr=0.00001)
-    trainset = [dataset[i] for i in range(int(0.8*len(dataset)))]
-    testset = [dataset[i] for i in range(int(0.8*len(dataset)), len(dataset))]
-    dataloader_train = DataLoader(trainset, batch_size=64, shuffle=True)
-    for epoch in range(10000):
-        print(f"Epoch {epoch} ========> ")
-        loss_sum, count = 0.0, 1
-        for i in dataloader_train:
-            edge_index = i.edge_index.to(device)
-            edge_weight = i.edge_weight.to(device)
-            node_features = i.node_features.to(device)
-            y = i.y.to(device)
-            batch = i.batch.to(device)
-            pred = model(node_features, edge_index, edge_weight, batch)
-            loss = loss_fn(y, pred)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            print("loss", loss)
-            loss_sum += float(loss)
-            count += 1
-        wandb.log({'avr_loss':loss_sum/count})
-    # test_loop
-    
-    wandb.finish()
-    return
 
 def try_to_load_data_from_matbench_discovery():
     "I want to know how to load dataset from matbench_discovery"
