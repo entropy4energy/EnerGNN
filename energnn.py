@@ -224,7 +224,7 @@ class DatasetWBM(Dataset):
         return self.wbm_relax_dataset_list.__len__()
     def __getitem__(self, index:int) -> Data: # Not support Slice currently.
         if type(index)==slice: raise Exception("Not support slice currently")
-        node_features, edge_index, edge_weight = Toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
+        node_features, edge_index, edge_weight, cell = Toolbelt.ase_atoms_to_graph(self.wbm_relax_dataset_list[index][0], cutoff=self.cutoff)
         material_id:str = self.wbm_relax_dataset_list[index][1]
         e_above_hull_wbm = self.e_above_hull_wbm[material_id]
         e_form_per_atom_wbm = self.e_form_per_atom_wbm[material_id]
@@ -235,7 +235,8 @@ class DatasetWBM(Dataset):
             edge_attr = edge_weight,
             matrix = tc.tensor(self.wbm_relax_dataset_list[index][0].get_cell().tolist()).float(),
             # TODO: Add stress and force to WBM dataset.
-            y = tc.tensor([[uncorrected_energy, e_above_hull_wbm]]).float()
+            #y = tc.tensor([[uncorrected_energy, e_above_hull_wbm]]).float()
+            y = tc.tensor([[uncorrected_energy]]).float()
         )
 
 def datasetAlexandriaNeo(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
@@ -296,20 +297,104 @@ def datasetAlexandriaNeo(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
 
 # region: Modules
 # This model is depreciated.
+class LeakySiLU(nn.Module):
+    def __init__(self, alpha):
+        super().__init__()
+        self.alpha = alpha
+        self.silu = nn.SiLU()
+    def forward(self, x):
+        return self.silu(x) + self.alpha*x
+class EnerGMP(tcg.nn.conv.MessagePassing):
+    def __init__(self, nn:nn.Module, aggr:str="add"):
+        """
+        - **nn**: the module that input have shape 2*input_channel, output have shape output_channel.
+        """
+        super().__init__(aggr=aggr)
+        self.nn = nn
+    def forward(self, x, edge_index):
+        return self.propagate(edge_index, x=x)
+    def message(self, x_i, x_j):
+        """
+        - x_i: target node
+        - x_j: source node
+        """
+        x = tc.cat((x_i, x_j), dim=1)
+        x = self.nn(x)
+        return x
+    def update(self, aggr_out):
+        return aggr_out
+class EnergDev(nn.Module):
+    """This model only predic the total energy of a structure (graph) in forward."""
+    def __init__(self):
+        super().__init__()
+        conv1nn = nn.Sequential(nn.Linear(8, 64), LeakySiLU(0.05), nn.Linear(64, 32), LeakySiLU(0.05)) 
+        conv2nn = nn.Sequential(nn.Linear(64, 64), LeakySiLU(0.05), nn.Linear(64, 128), LeakySiLU(0.05)) 
+        conv3nn = nn.Sequential(nn.Linear(256, 64), LeakySiLU(0.05), nn.Linear(64, 64), LeakySiLU(0.05))
+        conv4nn = nn.Sequential(nn.Linear(128, 64), LeakySiLU(0.05), nn.Linear(64, 128), LeakySiLU(0.05))
+        self.conv1 = EnerGMP(nn=conv1nn, aggr="add")
+        self.conv2 = EnerGMP(nn=conv2nn, aggr="add")
+        self.conv3 = EnerGMP(nn=conv3nn, aggr="add")
+        self.conv4 = EnerGMP(nn=conv4nn, aggr="add")
+        self.interlayer1 = nn.Sequential(nn.Linear(32, 128), LeakySiLU(0.05), nn.Linear(128, 32), LeakySiLU(0.05))
+        self.interlayer2 = nn.Sequential(nn.Linear(128, 128), LeakySiLU(0.05), nn.Linear(128, 128), LeakySiLU(0.05))
+        self.interlayer3 = nn.Sequential(nn.Linear(64, 128), LeakySiLU(0.05), nn.Linear(128, 64), LeakySiLU(0.05))
+        self.fc1 = tgnn.Linear(128, 1)
+        self.silu = LeakySiLU(0.1)
+    def node_features_to_edge_weight(self, node_features, edge_index):
+        ans = tc.zeros(edge_index.shape[1], 3).to(node_features.device)
+        ans = (node_features[edge_index[1, :]] - node_features[edge_index[0, :]])[:, 1:]
+        return ans
+    def forward(self, data:Data):
+        # we don't using edge_weight here, we calculate edge_weight from node_features.
+        model_device = next(self.parameters()).device
+        batch_index = data.batch.to(model_device)
+        x = data.x.to(model_device)
+        matrix = data.matrix.to(model_device)
+        # Convert the fractional coordination to absolute.
+        def cvt_frac_to_abs(x, matrix, batch_index):
+            matrix_group = matrix.float().reshape(-1, 3, 3)
+            abs_position = (x[:, 1:].reshape(-1, 1, 3)@matrix_group[batch_index]).reshape(-1, 3)
+            ans = tc.cat((x[:, 0].reshape(-1, 1), abs_position), dim=1)
+            return  ans
+        node_features = cvt_frac_to_abs(x, matrix, batch_index)
+        #edge_weight_cal = self.node_features_to_edge_weight(node_features, data.edge_index).to(model_device)
+        edge_index = data.edge_index.to(model_device)
+        node_features = self.conv1(node_features, edge_index)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer1(tmp:=node_features) + tmp # Resnet
+        node_features = self.conv2(node_features, edge_index)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer2(tmp:=node_features) + tmp # Resnet
+        node_features = self.conv3(node_features, edge_index)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer3(tmp:=node_features) + tmp # Resnet
+        node_features = self.conv4(node_features, edge_index)
+        node_features = self.silu(node_features)
+        x = [tc.zeros((node_features.shape[1],), device=next(self.parameters()).device) for _ in range(batch_index.max().item()+1)]
+        for i in range(node_features.shape[0]):
+            x[batch_index[i]] += node_features[i]
+        x = tc.stack(x, dim=0)
+        x = self.fc1(x)
+        x = -self.silu(x) # minus because the energies are negative. and -5 is to push center away from zero.
+        return x*0.1
+
 class EnerG(nn.Module):
     """This model only predic the total energy of a structure (graph) in forward."""
     def __init__(self):
         super().__init__()
-        conv1nn = nn.Sequential(nn.Linear(3, 64), nn.LeakyReLU(0.1), nn.Linear(64, 4*8), nn.LeakyReLU(0.1)) 
-        conv2nn = nn.Sequential(nn.Linear(3, 64), nn.LeakyReLU(0.1), nn.Linear(64, 8*64), nn.LeakyReLU(0.1)) 
-        conv3nn = nn.Sequential(nn.Linear(3, 64), nn.LeakyReLU(0.1), nn.Linear(64, 64*128), nn.LeakyReLU(0.1)) 
+        conv1nn = nn.Sequential(nn.Linear(3, 64), LeakySiLU(0.05), nn.Linear(64, 4*8), LeakySiLU(0.05)) 
+        conv2nn = nn.Sequential(nn.Linear(3, 64), LeakySiLU(0.05), nn.Linear(64, 8*64), LeakySiLU(0.05)) 
+        conv3nn = nn.Sequential(nn.Linear(3, 64), LeakySiLU(0.05), nn.Linear(64, 64*128), LeakySiLU(0.05))
+        conv4nn = nn.Sequential(nn.Linear(3, 64), LeakySiLU(0.05), nn.Linear(64, 128*128), LeakySiLU(0.05))
         self.conv1 = tgnn.NNConv(4, 8, nn=conv1nn, aggr="add")
         self.conv2 = tgnn.NNConv(8, 64, nn=conv2nn, aggr="add")
         self.conv3 = tgnn.NNConv(64, 128, nn=conv3nn, aggr="add")
-        self.fc1 = tgnn.Linear(128, 128)
-        self.fc2 = tgnn.Linear(128, 64)
-        self.fc3 = tgnn.Linear(64, 1)
-        self.leaky = nn.LeakyReLU(0.1)
+        self.conv4 = tgnn.NNConv(128, 128, nn=conv4nn, aggr="add")
+        self.interlayer1 = nn.Sequential(nn.Linear(8, 128), LeakySiLU(0.05), nn.Linear(128, 8), LeakySiLU(0.05))
+        self.interlayer2 = nn.Sequential(nn.Linear(64, 128), LeakySiLU(0.05), nn.Linear(128, 64), LeakySiLU(0.05))
+        self.interlayer3 = nn.Sequential(nn.Linear(128, 128), LeakySiLU(0.05), nn.Linear(128, 128), LeakySiLU(0.05))
+        self.fc1 = tgnn.Linear(128, 1)
+        self.silu = LeakySiLU(0.1)
     def node_features_to_edge_weight(self, node_features, edge_index):
         ans = tc.zeros(edge_index.shape[1], 3).to(node_features.device)
         ans = (node_features[edge_index[1, :]] - node_features[edge_index[0, :]])[:, 1:]
@@ -330,24 +415,23 @@ class EnerG(nn.Module):
         edge_weight_cal = self.node_features_to_edge_weight(node_features, data.edge_index).to(model_device)
         edge_index = data.edge_index.to(model_device)
         node_features = self.conv1(node_features, edge_index, edge_weight_cal)
-        node_features = self.leaky(node_features)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer1(tmp:=node_features) + tmp # Resnet
         node_features = self.conv2(node_features, edge_index, edge_weight_cal)
-        node_features = self.leaky(node_features)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer2(tmp:=node_features) + tmp # Resnet
         node_features = self.conv3(node_features, edge_index, edge_weight_cal)
-        node_features = self.leaky(node_features)
+        node_features = self.silu(node_features)
+        node_features = self.interlayer3(tmp:=node_features) + tmp # Resnet
         x = [tc.zeros((node_features.shape[1],), device=next(self.parameters()).device) for _ in range(batch_index.max().item()+1)]
         for i in range(node_features.shape[0]):
             x[batch_index[i]] += node_features[i]
         x = tc.stack(x, dim=0)
         x = self.fc1(x)
-        x = self.leaky(x)
-        x = self.fc2(x)
-        x = self.leaky(x)
-        x = self.fc3(x)
+        x = -self.silu(x) # minus because the energies are negative. and -5 is to push center away from zero.
         return x
     def force(self, input_data:Data):
         """This function will evaluate the force of struct"""
-        # TODO: Convert the fractional coordination to absolute coordination.
         model_device = next(self.parameters()).device
         edge_index = edge_index.to(model_device)
         x = input_data.x
@@ -403,7 +487,7 @@ def tcg_trainer(model:tc.nn.Module, dataset:Dataset, optimizer,
             optimizer.step()
             sum_loss += float(loss)
             n+=1
-            bar.set_postfix_str(f"avr_loss:{sum_loss/n}")
+            bar.set_postfix_str(f"avr_loss:{sum_loss/n} loss:{float(loss)}")
         log['avr_loss'] += [sum_loss/n]
     return model, log
 def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here should be a closure (return the real loss_fn).
