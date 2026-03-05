@@ -27,4 +27,5 @@ optimade = ">=1.4.1,<2"
 [pypi-dependencies]
 ultraimport = ">=0.1.0, <0.2"
 torch-geometric = ">=2.7.0, <3"
+fairchem-core = ">=1.0.0, <2"
 # matbench-discovery = ">=1.3.1"   # Please install this from github.

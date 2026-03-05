@@ -18,7 +18,7 @@ from torch_geometric.data import Data
 import torch_geometric.loader as tcg_loader
 from ultraimport.ultraimport import ultraimport
 import matbench_discovery.data as matbench_data
-import wandb
+#import wandb
 import pickle
 import pandas as pd
 from functools import reduce
@@ -45,8 +45,16 @@ class Toolbelt:
         os.system(f"rm -r {Toolbelt.get_root_path()}/tmp")
         return
     @staticmethod
-    def ase_atoms_to_graph(atoms:ase.atoms.Atoms, cutoff:float=30.0) -> tuple[tc.Tensor, tc.Tensor, tc.Tensor]:
-        'This function will turn the ase Atoms into Data'
+    def ase_atoms_to_graph(atoms:ase.atoms.Atoms, cutoff:float=6.0) -> tuple[tc.Tensor, tc.Tensor, tc.Tensor]:
+        """
+        This function will turn the ase Atoms into Data
+        - **atoms**: the ase:atoms.Atoms
+        - **cutoff**: the maximum length of bond.
+        - return
+            - node_features: Tensor[[<atomic number, fractional_x, fractional_y, fractional_z>], ...]
+            - edge_index:
+            - edge_weight:
+            - cell: """
         # return Data(node_feature=..., edge_index=..., edge_weight=..., cell_vectors=) # this is the input of model.
         atomic_numbers = tc.tensor(atoms.get_atomic_numbers(), dtype=tc.float)
         atom_fractional_position = tc.tensor(atoms.get_scaled_positions(), dtype=tc.float)
@@ -75,7 +83,7 @@ class Toolbelt:
     def download_environment_files():
         """
         This will download all files that needed. All files will be installed in project_root/tmp
-        > This function only need to be excuted at first time.
+        > This function only need to be excuted at project setup.
         """
         # Download alexandria 
         # Make sure target directory exist.
@@ -88,6 +96,37 @@ class Toolbelt:
         # unzip the .bz2 files
         print("Extract Alexandria dataset...")
         os.system(f"bzip2 -d {Toolbelt.get_root_path()}/Alexandria/*.bz2")
+        # Download the OMAT24 dataset.
+        download_url_train = [
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-1000.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-1000-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-500.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-500-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-300.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-300-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/aimd-from-PBE-1000-npt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/aimd-from-PBE-1000-nvt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-relax.tar.gz'
+            # TODO
+        ]
+        download_url_valid = [
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-1000.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-1000-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-500.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-500-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-300.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-300-subsampled.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/aimd-from-PBE-1000-npt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/aimd-from-PBE-1000-nvt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/aimd-from-PBE-3000-npt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/aimd-from-PBE-3000-nvt.tar.gz',
+            'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-relax.tar.gz',
+        ]
+        for train_url in download_url_train:
+            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/omat24/train/ {train_url}")
+        for vaild_url in download_url_valid:
+            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/omat24/vaild/ {vaild_url}")
+        
     @staticmethod
     def pk_dump(obj, path:str, absolute:bool=False):
         """
@@ -294,6 +333,57 @@ def datasetAlexandriaNeo(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
             ))
     return ans
 
+def datasetWBM(cutoff=6.0)->list[Data]:
+    """
+    Return the list contain the Data in WBM.
+    - cutoff: the largest bond between atoms (A).
+    """
+    def init()->tuple[dict, list]: # dict here is energy where key is material_id, and value is energy.
+        """
+        Return the energy and list[(ase.atoms.Atoms, str)]
+        """
+        print("Init the Dataset WBM.")
+        from ase.io import read as ase_read # This function read .extxyz file to ase.atoms.Atoms
+        import zipfile # because the ase dataset is in zip type.
+        DataFiles = matbench_data.DataFiles
+        df_wbm_summary:pd.DataFrame = pd.read_csv(DataFiles.wbm_summary.path) # Load the wbm summary dataframe
+        # Load the graphs: wbm_relax_dataset_list
+        wbm_relax_dataset_list:list[tuple[ase.atoms.Atoms, str]] = []
+        with zipfile.ZipFile(DataFiles.wbm_relaxed_atoms.path, 'r') as z:
+            for file_name in (bar:=tqdm.tqdm(z.namelist())):
+                #bar.set_description(f"Init the WBM data")
+                with z.open(file_name) as f:
+                    text_data = io.TextIOWrapper(f)
+                    wbm_relaxed_atoms = ase_read(text_data, index=":", format='extxyz')
+                    wbm_relax_dataset_list.append((wbm_relaxed_atoms[0], file_name[:-7])) # [(<ase.atoms.Atoms>, <mateiral_id>), (...), ...]
+        energy:dict = dict(zip(df_wbm_summary["material_id"], df_wbm_summary["uncorrected_energy"]))
+        atoms:dict = wbm_relax_dataset_list
+        return atoms, energy
+    atoms, energy_dict = init()
+    ans:list[Data] = []
+    for ase_atom, material_id in tqdm.tqdm(atoms):
+        energy = energy_dict[material_id]
+        node_features, edge_index, edge_weight, cell = Toolbelt.ase_atoms_to_graph(ase_atom, cutoff=cutoff)
+        ans.append(Data(
+            x = node_features,
+            edge_index = edge_index,
+            edge_attr = edge_weight,
+            matrix = tc.tensor(cell).float(),
+            y = tc.tensor([energy]).float()
+        ))
+    return ans
+def datasetOMat24(cutoff:float=6.0):
+    from fairchem.core.datasets import AseDBDataset
+    # TODO
+    return
+def datasetSubAlex(cutoff:float=6.0):
+    # TODO
+    return
+
+def datasetMP():
+    """Load the MP dataset"""
+    # TODO
+    return
 
 # region: Modules
 # This model is depreciated.
@@ -304,6 +394,12 @@ class LeakySiLU(nn.Module):
         self.silu = nn.SiLU()
     def forward(self, x):
         return self.silu(x) + self.alpha*x
+class SoftAbs(nn.Module):
+    def __init__(self, alpha):
+        super().__init__()
+        self.alpha = alpha
+    def forward(self, x):
+        return (x**2+self.alpha)**0.5-self.alpha**0.5
 class EnerGMP(tcg.nn.conv.MessagePassing):
     def __init__(self, nn:nn.Module, aggr:str="add"):
         """
@@ -323,23 +419,34 @@ class EnerGMP(tcg.nn.conv.MessagePassing):
         return x
     def update(self, aggr_out):
         return aggr_out
-class EnergDev(nn.Module):
+class EnerGDev(nn.Module):
     """This model only predic the total energy of a structure (graph) in forward."""
     def __init__(self):
         super().__init__()
-        conv1nn = nn.Sequential(nn.Linear(8, 64), LeakySiLU(0.05), nn.Linear(64, 32), LeakySiLU(0.05)) 
-        conv2nn = nn.Sequential(nn.Linear(64, 64), LeakySiLU(0.05), nn.Linear(64, 128), LeakySiLU(0.05)) 
-        conv3nn = nn.Sequential(nn.Linear(256, 64), LeakySiLU(0.05), nn.Linear(64, 64), LeakySiLU(0.05))
-        conv4nn = nn.Sequential(nn.Linear(128, 64), LeakySiLU(0.05), nn.Linear(64, 128), LeakySiLU(0.05))
-        self.conv1 = EnerGMP(nn=conv1nn, aggr="add")
-        self.conv2 = EnerGMP(nn=conv2nn, aggr="add")
-        self.conv3 = EnerGMP(nn=conv3nn, aggr="add")
-        self.conv4 = EnerGMP(nn=conv4nn, aggr="add")
-        self.interlayer1 = nn.Sequential(nn.Linear(32, 128), LeakySiLU(0.05), nn.Linear(128, 32), LeakySiLU(0.05))
-        self.interlayer2 = nn.Sequential(nn.Linear(128, 128), LeakySiLU(0.05), nn.Linear(128, 128), LeakySiLU(0.05))
-        self.interlayer3 = nn.Sequential(nn.Linear(64, 128), LeakySiLU(0.05), nn.Linear(128, 64), LeakySiLU(0.05))
-        self.fc1 = tgnn.Linear(128, 1)
+        conv1nn = nn.Sequential(nn.Linear(8, 256), nn.BatchNorm1d(256), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(256, 32), nn.BatchNorm1d(32), LeakySiLU(0.05)) 
+        conv2nn = nn.Sequential(nn.Linear(64, 512), nn.BatchNorm1d(512), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(512, 128), nn.BatchNorm1d(128), LeakySiLU(0.05)) 
+        conv3nn = nn.Sequential(nn.Linear(256, 128), nn.BatchNorm1d(128), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(128, 64), nn.BatchNorm1d(64), LeakySiLU(0.05))
+        conv4nn = nn.Sequential(nn.Linear(128, 256), nn.BatchNorm1d(256), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(256, 128), nn.BatchNorm1d(128), LeakySiLU(0.05))
+        conv5nn = nn.Sequential(nn.Linear(256, 256), nn.BatchNorm1d(256), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(256, 128), nn.BatchNorm1d(128), LeakySiLU(0.05))
+        #conv1nn = nn.Sequential(nn.Linear(8, 32))
+        #conv2nn = nn.Sequential(nn.Linear(64, 128))
+        #conv3nn = nn.Sequential(nn.Linear(256, 64))
+        #conv4nn = nn.Sequential(nn.Linear(128, 128))
+        #conv5nn = nn.Sequential(nn.Linear(256, 128))
+        self.conv1 = EnerGMP(nn=conv1nn, aggr="mean")
+        self.conv2 = EnerGMP(nn=conv2nn, aggr="mean")
+        self.conv3 = EnerGMP(nn=conv3nn, aggr="mean")
+        self.conv4 = EnerGMP(nn=conv4nn, aggr="mean")
+        self.conv5 = EnerGMP(nn=conv5nn, aggr="mean")
+        self.interlayer1 = nn.Sequential(nn.Linear(32, 512), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(512, 32), LeakySiLU(0.05), nn.BatchNorm1d(32))
+        self.interlayer2 = nn.Sequential(nn.Linear(128, 512), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(512, 128), LeakySiLU(0.05), nn.BatchNorm1d(128))
+        self.interlayer3 = nn.Sequential(nn.Linear(64, 512), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(512, 64), LeakySiLU(0.05), nn.BatchNorm1d(64))
+        self.interlayer4 = nn.Sequential(nn.Linear(128, 512), LeakySiLU(0.05), nn.Dropout1d(0.1), nn.Linear(512, 128), LeakySiLU(0.05), nn.BatchNorm1d(128))
+        self.fc1 = tgnn.Linear(128, 128)
+        self.fc2 = tgnn.Linear(128, 1)
         self.silu = LeakySiLU(0.1)
+        self.softabs = SoftAbs(1.0)
+        self.leakyrelu = nn.LeakyReLU(negative_slope=0.01)
     def node_features_to_edge_weight(self, node_features, edge_index):
         ans = tc.zeros(edge_index.shape[1], 3).to(node_features.device)
         ans = (node_features[edge_index[1, :]] - node_features[edge_index[0, :]])[:, 1:]
@@ -370,13 +477,20 @@ class EnergDev(nn.Module):
         node_features = self.interlayer3(tmp:=node_features) + tmp # Resnet
         node_features = self.conv4(node_features, edge_index)
         node_features = self.silu(node_features)
-        x = [tc.zeros((node_features.shape[1],), device=next(self.parameters()).device) for _ in range(batch_index.max().item()+1)]
-        for i in range(node_features.shape[0]):
-            x[batch_index[i]] += node_features[i]
-        x = tc.stack(x, dim=0)
+        node_features = self.interlayer4(tmp:=node_features) + tmp
+        node_features = self.conv5(node_features, edge_index)
+        node_features = self.silu(node_features)
+
+        #x = [tc.zeros((node_features.shape[1],), device=next(self.parameters()).device) for _ in range(batch_index.max().item()+1)]
+        #for i in range(node_features.shape[0]):
+        #    x[batch_index[i]] += node_features[i]
+        #x = tc.stack(x, dim=0)
+        x = tgnn.global_add_pool(node_features, batch_index)
         x = self.fc1(x)
-        x = -self.silu(x) # minus because the energies are negative. and -5 is to push center away from zero.
-        return x*0.1
+        x = self.silu(x)
+        x = self.fc2(x)
+        x = x - 100
+        return x
 
 class EnerG(nn.Module):
     """This model only predic the total energy of a structure (graph) in forward."""
@@ -496,6 +610,7 @@ def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here shoul
                num_workers=1):
     """This tester apply the tcg_loader.dataloader to dataset"""
     loss_fn = loss_fn()
+    model.eval()
     with tc.no_grad(): # Test don't need the grad
         model = model.to(device)
         dataloader = tcg_loader.DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
@@ -506,8 +621,6 @@ def tcg_tester(model:tc.nn.Module, dataset:Dataset, loss_fn,# loss_fn here shoul
             bar.set_description_str(f"loss_fn_output={loss}")            
     return
 # endregion
-
-
 # region: playground
 
 def try_to_load_data_from_matbench_discovery():
