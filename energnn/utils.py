@@ -54,6 +54,10 @@ class Toolbelt:
         this_path = os.path.dirname(os.path.abspath(__file__))
         return os.path.abspath(os.path.join(this_path, ".."))
     @staticmethod
+    def get_tmp_path()->str:
+        """Return the path of tmp files located."""
+        return Toolbelt.get_root_path()+"/tmp"
+    @staticmethod
     def download_environment_files():
         """
         This will download all files that needed. All files will be installed in project_root/tmp
@@ -66,10 +70,10 @@ class Toolbelt:
                          '020', '021', '022', '023', '024', '025', '026', '027', '028', '029',
                          '030', '031', '032', '033', '034', '035', '036', '037', '038', '039',
                          '040', '041', '042', '043', '044', '045', '046', '047', '048', '049']:
-            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/Alexandria/ https://alexandria.icams.rub.de/data/pbe/2024.12.15/alexandria_{file_num}.json.bz2")
+            os.system(f"wget -P {Toolbelt.get_tmp_path()}/Alexandria/ https://alexandria.icams.rub.de/data/pbe/2024.12.15/alexandria_{file_num}.json.bz2")
         # unzip the .bz2 files
         print("Extract Alexandria dataset...")
-        os.system(f"bzip2 -d {Toolbelt.get_root_path()}/Alexandria/*.bz2")
+        os.system(f"bzip2 -d {Toolbelt.get_tmp_path()}/Alexandria/*.bz2")
         # Download the OMAT24 dataset.
         download_url_train = [
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/rattled-1000.tar.gz',
@@ -97,9 +101,9 @@ class Toolbelt:
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-relax.tar.gz',
         ]
         for train_url in download_url_train:
-            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/omat24/train/ {train_url}")
+            os.system(f"wget -P {Toolbelt.get_tmp_path()}/omat24/train/ {train_url}")
         for vaild_url in download_url_valid:
-            os.system(f"wget -P {Toolbelt.get_root_path()}/tmp/omat24/vaild/ {vaild_url}")
+            os.system(f"wget -P {Toolbelt.get_tmp_path()}/omat24/vaild/ {vaild_url}")
         
     @staticmethod
     def pk_dump(obj, path:str, absolute:bool=False):
@@ -111,10 +115,10 @@ class Toolbelt:
         ```
         # These two lines are the same.
         Toolbelt.pk_dump(obj, "/aaa.dump")
-        Toolbelt.pk_dump(obj, f"{Toolbelt.get_root_path()}/aaa.dump", absolute=True)
+        Toolbelt.pk_dump(obj, f"{Toolbelt.get_tmp_path()}/aaa.dump", absolute=True)
         ```
         """
-        abs_path = path if absolute else f"{Toolbelt.get_root_path()}/tmp{path}"
+        abs_path = path if absolute else f"{Toolbelt.get_tmp_path()}{path}"
         with open(abs_path, "wb") as f:
             pickle.dump(obj, f)
     @staticmethod
@@ -125,10 +129,10 @@ class Toolbelt:
         - absolute: if true, path should be a absolute path.
         ```
         Toolbelt.pk_load("/aaa.dump")
-        Toolbelt.pk_load(f"{Toolbelt.get_root_path()}/aaa.dump", absolute=True)
+        Toolbelt.pk_load(f"{Toolbelt.get_tmp_path()}/aaa.dump", absolute=True)
         ```
         """
-        abs_path = path if absolute else f"{Toolbelt.get_root_path()}/tmp{path}"
+        abs_path = path if absolute else f"{Toolbelt.get_tmp_path()}{path}"
         with open(abs_path, "rb") as f:
             return pickle.load(f)
 # endregion

@@ -7,6 +7,7 @@ import ase, io
 import pandas as pd
 import torch as tc
 from .utils import Toolbelt
+import fairchem as fc
 def alexandria(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
     """
     This function will return a list as dataset.
@@ -45,7 +46,7 @@ def alexandria(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
     from monty.serialization import loadfn
     ans = []
     for i in load_files:
-        file_path = f"{utils.Toolbelt.get_root_path()}/tmp/Alexandria/alexandria_{i}.json"
+        file_path = f"{utils.Toolbelt.get_tmp_path()}/Alexandria/alexandria_{i}.json"
         data_dict = loadfn(file_path)
         for entry in tqdm.tqdm(data_dict['entries']): # in each entry
             node_features, edge_index, edge_weight, matrix, xyz = structure_to_graph_data(entry.structure, cutoff=cutoff)
@@ -101,3 +102,7 @@ def wbm(cutoff=6.0)->list[Data]:
             y = tc.tensor([energy]).float()
         ))
     return ans
+
+def omat24()->list[Data]:
+    
+    return
