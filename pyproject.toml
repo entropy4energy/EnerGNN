@@ -3,7 +3,7 @@ name = "energnn"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11, <3.12"
+requires-python = ">=3.12, <3.13"
 dependencies = [
     "ipykernel",
     "numpy",
@@ -15,11 +15,12 @@ dependencies = [
     "ultraimport",
     "wandb",
     "torch",
-    "torch-scatter",
+    #"torch-scatter",
     "fairchem-core",
     "torch_geometric",
     "monty",
-    "matbench-discovery@git+https://github.com/janosh/matbench-discovery.git"
+    "pip",
+    #"matbench-discovery@git+https://github.com/janosh/matbench-discovery.git" # you must install matbench-discovery manually.
 ]
 [tool.uv.extra-build-dependencies]
 torch-scatter=["torch"]

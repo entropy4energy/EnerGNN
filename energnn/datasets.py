@@ -7,7 +7,7 @@ import ase, io
 import pandas as pd
 import torch as tc
 from .utils import Toolbelt
-import fairchem as fc
+from fairchem.core.datasets import AseDBDataset
 def alexandria(load_files:list[str]=["000"], cutoff=6.0)->list[Data]:
     """
     This function will return a list as dataset.
@@ -104,5 +104,9 @@ def wbm(cutoff=6.0)->list[Data]:
     return ans
 
 def omat24()->list[Data]:
-    
-    return
+    file_paths = [
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-relax"
+    ]
+    config_kwargs = {}
+    dataset = AseDBDataset(config=dict(src=file_paths, **config_kwargs))
+    return dataset
