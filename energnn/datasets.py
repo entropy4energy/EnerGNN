@@ -103,10 +103,36 @@ def wbm(cutoff=6.0)->list[Data]:
         ))
     return ans
 
-def omat24()->list[Data]:
+def omat24(cutoff=6.0)->list[Data]:
     file_paths = [
-        Toolbelt.get_tmp_path()+"/omat24/train/rattled-relax"
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-relax",
+        Toolbelt.get_tmp_path()+"/omat24/train/aimd-from-PBE-1000-npt",
+        Toolbelt.get_tmp_path()+"/omat24/train/aimd-from-PBE-1000-nvt",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-300-subsampled",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-500-subsampled",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-300",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-500",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-1000-subsampled",
+        Toolbelt.get_tmp_path()+"/omat24/train/rattled-1000",
+        Toolbelt.get_tmp_path()+""
+    ]
+    dataset_files = [
+        file_paths[0],
     ]
     config_kwargs = {}
-    dataset = AseDBDataset(config=dict(src=file_paths, **config_kwargs))
-    return dataset
+    dataset = AseDBDataset(config=dict(src=dataset_files, **config_kwargs))
+    # Convert the fairchem.core.datasets.atomic_data.AtomicData to ase.Atoms
+    ans = []
+    for each_atomic in dataset:
+        ase_atoms = each_atomic.to_ase()[0] # All output is a list with only one element.
+        energy = each_atomic.energy[0]
+        #print(">>>", type(ase_atoms))
+        node_features, edge_index, edge_weight, cell = utils.Toolbelt.ase_atoms_to_graph(ase_atoms, cutoff=cutoff)
+        ans.append(Data(
+            x = node_features,
+            edge_index = edge_index,
+            edge_attr = edge_weight,
+            matrix = tc.tensor(cell).float(),
+            y = tc.tensor([energy]).float(),
+        ))
+    return ans

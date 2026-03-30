@@ -108,3 +108,24 @@ class EnerGDev(nn.Module):
         x = self.fc2(x)
         x = x - 100
         return x
+
+class GNNConvLayer(nn.Module):
+    def __init__(self, conv_kernel:tc.nn.Module):
+        """
+        # Parameters
+        - conv_kernel: This is a convolution kernel model, which needs 2 tensor input (node_pair, edge_features), and output should match the next layer of node_features.
+        """
+        super().__init__()
+        self.conv_kernel = conv_kernel
+    def device(self):
+        return next(self.parameters()).device
+    def forward(self, node_features:tc.Tensor, edge_index:tc.Tensor, edge_features:tc.Tensor):
+        b = node_features.shape[0]
+        n = node_features.shape[1]
+        node_pair = node_features[edge_index].permute(1, 0, 2).reshape(-1, n*2)
+        #print(node_pair)
+        kernel_output = self.conv_kernel.forward(node_pair, edge_features)
+        #print(kernel_output)
+        new_node_features_num = kernel_output.shape[1]
+        new_node_features = tc.zeros(b, kernel_output.shape[1]).to(self.device()).scatter_add_(0, edge_index[1].unsqueeze(0).repeat(new_node_features_num, 1).T, kernel_output)
+        return new_node_features

@@ -4,7 +4,7 @@ import tqdm
 from torch.utils.data import Dataset
 import os, pickle, json
 import ase
-
+import ase.neighborlist as ase_neighborlist
 # region: toolbelt
 class Toolbelt:
     @staticmethod
@@ -36,7 +36,8 @@ class Toolbelt:
             atom_fractional_position],
             dim=1)
         # i is the index of central atom, and j is the index of nearby atoms, d is the distance between each other.
-        i, j, d = ase.neighbor_list('ijd', atoms, cutoff, self_interaction=True)
+        #i, j, d = ase.neighbor_list('ijd', atoms, cutoff, self_interaction=True) # it seems the api has changed.
+        i, j, d = ase_neighborlist.neighbor_list('ijd', atoms, cutoff, self_interaction=True) 
         edge_index = tc.tensor([i, j], dtype=tc.long)
         edge_weight = tc.tensor(d, dtype=tc.float)
         #print(f"node_features shape:{node_features.shape}, {type(node_features)}")
@@ -85,7 +86,6 @@ class Toolbelt:
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/aimd-from-PBE-1000-npt.tar.gz',
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241018/omat/train/aimd-from-PBE-1000-nvt.tar.gz',
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-relax.tar.gz'
-            # TODO
         ]
         download_url_valid = [
             'https://dl.fbaipublicfiles.com/opencatalystproject/data/omat/241220/omat/val/rattled-1000.tar.gz',
@@ -104,7 +104,8 @@ class Toolbelt:
             os.system(f"wget -P {Toolbelt.get_tmp_path()}/omat24/train/ {train_url}")
         for vaild_url in download_url_valid:
             os.system(f"wget -P {Toolbelt.get_tmp_path()}/omat24/vaild/ {vaild_url}")
-        
+        os.system(f"cd {Toolbelt.get_tmp_path()}/omat24/train/ && for f in *.tar.gz; do tar -zxvf \"$f\"; done")
+        os.system(f"cd {Toolbelt.get_tmp_path()}/omat24/vaild/ && for f in *.tar.gz; do tar -zxvf \"$f\"; done")
     @staticmethod
     def pk_dump(obj, path:str, absolute:bool=False):
         """
